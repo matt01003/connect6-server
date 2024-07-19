@@ -1,61 +1,58 @@
 const EventEmitter = require("events")
+const { v4: uuidv4 } = require("uuid")
+const Connect6 = require("./Connect6")
 
-class Room {
-  constructor() {
-    this.rooms = new Map()
+class Room extends EventEmitter {
+  constructor(username) {
+    super()
+    this.roomId = uuidv4()
+    this.roomName = `#${this.roomId.slice(0, 4)} - ${username}`
+    this.players = {}
+    this.game = new Connect6()
+    this.status = "waiting"
+    this.message = []
   }
 
-  createRoom(roomId, username) {
-    const emitter = new EventEmitter()
-    this.rooms.set(roomId, {
-      emitter,
-      roomName: `#${roomId.slice(0, 4)} - ${username}`,
-      roomId: roomId,
-      players: {},
-      game: {
-        board: [...Array(19)].map((_) => Array(19).fill(".")),
-        currentPlayer: "x",
-        round: 0,
-      },
-      status: "waiting",
-    })
-  }
-
-  removeRoom(roomId) {
-    this.rooms.delete(roomId)
-  }
-
-  getRoom(roomId) {
-    return this.rooms.get(roomId)
-  }
-
-  getRooms() {
-    return Array.from(this.rooms.values()).map((e) => ({
-      roomId: e.roomId,
-      roomName: e.roomName,
-      status: e.status,
-    }))
-  }
-
-  addClientToRoom(roomId, user) {
-    const room = this.getRoom(roomId)
-    const playersCount = Object.values(room.players).length
-    if (playersCount === 0) {
-      room.players[user.id] = { ...user }
-      return "player"
-    } else if (playersCount === 1) {
-      room.players[user.id] = { ...user }
+  addPlayer(user) {
+    this.players[user.id] = { ...user }
+    if (Object.values(this.players).length === 2) {
       const coinFlip = Math.floor(Math.random() * 2)
-      Object.keys(room.players).forEach((e, i) => {
-        room.players[e].type = coinFlip === i ? "x" : "o"
+      Object.keys(this.players).forEach((id, index) => {
+        this.players[id].type = coinFlip === index ? "x" : "o"
       })
-      room.status = "in game"
-      return "player"
-    } else {
-      room.players[user.id] = { ...user, type: "audience" }
-      return "audience"
+
+      this.status = "in game"
+      this.emit("room", { event: "room update", data: this.toJson() })
+      const message = `${user.username} has joined`
+      this.message.push(message)
+      this.emit("room", {
+        event: "room message",
+        data: { message },
+      })
     }
   }
+
+  getPlayerType(playerId) {
+    return this.players[playerId]?.type || null
+  }
+
+  updateBoard(move) {
+    const gameUpdate = this.game.makeMove(move)
+    this.emit("room", { event: "game update", data: gameUpdate })
+  }
+
+  toJson() {
+    return {
+      roomId: this.roomId,
+      roomName: this.roomName,
+      players: this.players,
+      game: this.game.toJson(),
+      status: this.status,
+      message: this.message,
+    }
+  }
+
+  // Add other game-related methods here
 }
 
 module.exports = Room
